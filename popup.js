@@ -208,7 +208,7 @@ startButton.addEventListener("click", async () => {
   }
 
   if (maxWords < 1) {
-    showSetupError("Max verdict words must be at least 1.");
+    showSetupError("Max words must be at least 1.");
     return;
   }
 

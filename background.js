@@ -51,7 +51,7 @@ function normalizeMaxWords(maxWords) {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 100;
 }
 
-function enforceVerdictWordCap(text, maxWords) {
+function enforceWordCap(text, maxWords) {
   const words = text.trim().split(/\s+/).filter(Boolean);
   const wordCount = words.length;
 
@@ -78,6 +78,10 @@ function buildReviewPrompt(question, draftAnswer) {
 
 function buildRefinePrompt(previousReview) {
   return `Refine your answer based on this review: ${previousReview}.${CHANGES_SUFFIX}`;
+}
+
+function buildInitialDraftPrompt(question, maxWords) {
+  return `${question} Answer in no more than ${maxWords} words.`;
 }
 
 function buildVerdictPrompt(question, maxWords) {
@@ -203,11 +207,15 @@ async function runCouncil(question, roundsInput, maxWordsInput) {
       });
 
       const draftPrompt =
-        round === 1 ? question : buildRefinePrompt(lastReview);
+        round === 1
+          ? buildInitialDraftPrompt(question, maxWords)
+          : buildRefinePrompt(lastReview);
 
       lastDraft = await askDraftor(draftorTab, draftPrompt);
 
       if (round === 1) {
+        const cappedDraft = enforceWordCap(lastDraft, maxWords);
+        lastDraft = cappedDraft.text;
         transcript.push({
           speaker: "Draftor",
           text: lastDraft,
@@ -257,7 +265,7 @@ async function runCouncil(question, roundsInput, maxWordsInput) {
       reviewerTab,
       buildVerdictPrompt(question, maxWords)
     );
-    const cappedVerdict = enforceVerdictWordCap(verdictText, maxWords);
+    const cappedVerdict = enforceWordCap(verdictText, maxWords);
     verdictText = cappedVerdict.text;
     transcript.push({
       speaker: "Reviewer",
