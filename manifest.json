@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Council",
-  "version": "0.1.0",
-  "description": "Send a question to an open ChatGPT tab and show its answer.",
-  "permissions": ["storage", "tabs"],
+  "version": "0.2.0",
+  "description": "Have open ChatGPT and Gemini tabs review each other's answers.",
+  "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": [
     "https://chat.openai.com/*",
-    "https://chatgpt.com/*"
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -21,6 +22,11 @@
         "https://chatgpt.com/*"
       ],
       "js": ["content-chatgpt.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://gemini.google.com/*"],
+      "js": ["content-gemini.js"],
       "run_at": "document_idle"
     }
   ]

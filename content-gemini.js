@@ -1,15 +1,14 @@
 const PROSE_BLOCK_SELECTORS = [
-  "div.markdown.prose",
-  ".markdown-new-styling",
-  ".standard-markdown",
-  ".progressive-markdown",
-  "[data-message-content]"
+  "message-content .markdown",
+  "message-content",
+  ".model-response-text",
+  ".response-content"
 ];
 
 function getConversationRoot() {
   return (
     document.querySelector("main") ||
-    document.querySelector("#thread") ||
+    document.querySelector("chat-app") ||
     document.body
   );
 }
@@ -18,17 +17,13 @@ function getAssistantProseBlocks() {
   const root = getConversationRoot();
   const matches = [];
 
-  for (const selector of PROSE_BLOCK_SELECTORS) {
-    for (const element of root.querySelectorAll(selector)) {
-      if (!(element instanceof HTMLElement)) {
-        continue;
+  for (const response of root.querySelectorAll("model-response")) {
+    for (const selector of PROSE_BLOCK_SELECTORS) {
+      for (const block of response.querySelectorAll(selector)) {
+        if (block instanceof HTMLElement) {
+          matches.push(block);
+        }
       }
-
-      if (element.closest('[data-message-author-role="user"]')) {
-        continue;
-      }
-
-      matches.push(element);
     }
   }
 
@@ -84,10 +79,15 @@ function getLatestResponseText(beforeCount) {
 }
 
 function getPromptInput() {
-  const input = document.querySelector("#prompt-textarea");
+  const input =
+    document.querySelector('rich-textarea [contenteditable="true"]') ||
+    document.querySelector("div.ql-editor[contenteditable='true']") ||
+    document.querySelector('div[contenteditable="true"][role="textbox"]');
 
   if (!(input instanceof HTMLElement) || input.contentEditable !== "true") {
-    throw new Error("Couldn't find ChatGPT's input box (#prompt-textarea).");
+    throw new Error(
+      "Couldn't find Gemini's input box (rich-textarea [contenteditable] / div.ql-editor)."
+    );
   }
 
   return input;
@@ -97,7 +97,10 @@ function waitForSendButton(timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     const check = () => {
-      const button = document.querySelector("#composer-submit-button");
+      const button =
+        document.querySelector('button[aria-label="Send message"]') ||
+        document.querySelector('button[aria-label*="Send"]') ||
+        document.querySelector("button.send-button");
 
       if (button instanceof HTMLButtonElement && !button.disabled) {
         resolve(button);
@@ -105,7 +108,11 @@ function waitForSendButton(timeoutMs = 5000) {
       }
 
       if (Date.now() - start > timeoutMs) {
-        reject(new Error("Couldn't find an enabled ChatGPT send button (#composer-submit-button)."));
+        reject(
+          new Error(
+            "Couldn't find an enabled Gemini send button (button[aria-label='Send message'])."
+          )
+        );
         return;
       }
 
@@ -118,14 +125,9 @@ function waitForSendButton(timeoutMs = 5000) {
 
 async function injectPrompt(text) {
   const input = getPromptInput();
-  const paragraph = input.querySelector("p");
-
-  if (!(paragraph instanceof HTMLParagraphElement)) {
-    throw new Error("Couldn't find ChatGPT's editable paragraph (#prompt-textarea > p).");
-  }
 
   input.focus();
-  paragraph.textContent = text;
+  input.textContent = text;
   input.dispatchEvent(new Event("input", { bubbles: true }));
   const sendButton = await waitForSendButton();
   sendButton.click();
@@ -138,10 +140,9 @@ function waitForResponseComplete(
   return new Promise((resolve, reject) => {
     const root = getConversationRoot();
     let debounceTimer = null;
-    let latestText = "";
 
     const finish = () => {
-      latestText = getLatestResponseText(beforeCount);
+      const latestText = getLatestResponseText(beforeCount);
 
       if (!latestText) {
         debounceTimer = setTimeout(finish, stableMs);
@@ -156,14 +157,14 @@ function waitForResponseComplete(
     const timeoutTimer = setTimeout(() => {
       observer.disconnect();
       clearTimeout(debounceTimer);
-      latestText = getLatestResponseText(beforeCount);
+      const latestText = getLatestResponseText(beforeCount);
 
       if (latestText) {
         resolve(latestText);
         return;
       }
 
-      reject(new Error("Timeout waiting for Draftor's response to stabilize."));
+      reject(new Error("Timeout waiting for Reviewer's response to stabilize."));
     }, timeoutMs);
 
     const observer = new MutationObserver(() => {
@@ -180,30 +181,30 @@ function waitForResponseComplete(
   });
 }
 
-async function askDraftor(question) {
+async function askReviewer(prompt) {
   try {
     const beforeCount = countAssistantProseBlocks();
-    await injectPrompt(question);
+    await injectPrompt(prompt);
     const text = await waitForResponseComplete(beforeCount);
 
     if (!text) {
-      throw new Error("Draftor returned an empty response.");
+      throw new Error("Reviewer returned an empty response.");
     }
 
     return text;
   } catch (error) {
-    throw new Error(error.message || "Could not get a response from Draftor.");
+    throw new Error(error.message || "Could not get a response from Reviewer.");
   }
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "DRAFT_QUESTION") {
+  if (message?.type !== "REVIEW_DRAFT") {
     return;
   }
 
   (async () => {
     try {
-      const text = await askDraftor(message.question);
+      const text = await askReviewer(message.prompt);
       sendResponse({ ok: true, text });
     } catch (error) {
       sendResponse({ ok: false, error: error.message });
