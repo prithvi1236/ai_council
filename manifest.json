@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Council",
+  "version": "0.1.0",
+  "description": "Send a question to an open ChatGPT tab and show its answer.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "https://chat.openai.com/*",
+    "https://chatgpt.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "js": ["content-chatgpt.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
