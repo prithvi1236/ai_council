@@ -1,5 +1,8 @@
+const DRAFTOR_URL = "https://chatgpt.com/";
+const REVIEWER_URL = "https://gemini.google.com/";
 const DRAFTOR_URL_PATTERN = /^https:\/\/(chat\.openai\.com|chatgpt\.com)\//;
 const REVIEWER_URL_PATTERN = /^https:\/\/gemini\.google\.com\//;
+const TAB_LOAD_TIMEOUT_MS = 30000;
 
 async function setRunState(updates) {
   await chrome.storage.local.set(updates);
@@ -13,6 +16,63 @@ async function getDraftorTab() {
 async function getReviewerTab() {
   const tabs = await chrome.tabs.query({});
   return tabs.find((tab) => REVIEWER_URL_PATTERN.test(tab.url || ""));
+}
+
+async function waitForTabLoad(tabId, urlPattern, timeoutMs = TAB_LOAD_TIMEOUT_MS) {
+  const tab = await chrome.tabs.get(tabId);
+
+  if (tab.status === "complete" && urlPattern.test(tab.url || "")) {
+    return tab;
+  }
+
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener);
+      reject(new Error("Tab load timed out."));
+    }, timeoutMs);
+
+    function listener(updatedTabId, changeInfo, updatedTab) {
+      if (updatedTabId !== tabId || changeInfo.status !== "complete") {
+        return;
+      }
+
+      if (urlPattern.test(updatedTab.url || "")) {
+        clearTimeout(timeout);
+        chrome.tabs.onUpdated.removeListener(listener);
+        resolve(updatedTab);
+      }
+    }
+
+    chrome.tabs.onUpdated.addListener(listener);
+  });
+}
+
+async function createRoleTab(url, urlPattern, active) {
+  const tab = await chrome.tabs.create({ url, active });
+  return waitForTabLoad(tab.id, urlPattern);
+}
+
+async function ensureCouncilTabs() {
+  let draftorTab = await getDraftorTab();
+  let reviewerTab = await getReviewerTab();
+
+  if (!draftorTab?.id) {
+    await setRunState({
+      draftorStatus: "Opening ChatGPT tab...",
+      reviewerStatus: reviewerTab?.id ? "Ready." : "Waiting."
+    });
+    draftorTab = await createRoleTab(DRAFTOR_URL, DRAFTOR_URL_PATTERN, false);
+  }
+
+  if (!reviewerTab?.id) {
+    await setRunState({
+      draftorStatus: draftorTab?.id ? "Ready." : "Draftor tab not found.",
+      reviewerStatus: "Opening Gemini tab..."
+    });
+    reviewerTab = await createRoleTab(REVIEWER_URL, REVIEWER_URL_PATTERN, false);
+  }
+
+  return { draftorTab, reviewerTab };
 }
 
 async function sendTabMessage(tab, urlPattern, scriptFile, message, roleName) {
@@ -148,13 +208,16 @@ async function askReviewer(reviewerTab, question, draftAnswer) {
 async function runCouncil(question, roundsInput, maxWordsInput) {
   const rounds = normalizeRounds(roundsInput);
   const maxWords = normalizeMaxWords(maxWordsInput);
-  const draftorTab = await getDraftorTab();
+  let draftorTab;
+  let reviewerTab;
 
-  if (!draftorTab?.id) {
+  try {
+    ({ draftorTab, reviewerTab } = await ensureCouncilTabs());
+  } catch (error) {
     await setRunState({
       status: "error",
-      error: "Could not find an open Draftor tab at chat.openai.com.",
-      draftorStatus: "Draftor tab not found.",
+      error: error.message,
+      draftorStatus: "Could not open required tabs.",
       reviewerStatus: "Waiting.",
       verdict: "",
       transcript: []
@@ -162,7 +225,17 @@ async function runCouncil(question, roundsInput, maxWordsInput) {
     return;
   }
 
-  const reviewerTab = await getReviewerTab();
+  if (!draftorTab?.id) {
+    await setRunState({
+      status: "error",
+      error: "Could not find an open Draftor tab at chatgpt.com.",
+      draftorStatus: "Draftor tab not found.",
+      reviewerStatus: "Waiting.",
+      verdict: "",
+      transcript: []
+    });
+    return;
+  }
 
   if (!reviewerTab?.id) {
     await setRunState({
