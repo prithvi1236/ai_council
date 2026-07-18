@@ -57,6 +57,7 @@ background.js        Orchestration, storage, tab messaging
 content-chatgpt.js   Draftor DOM automation (ChatGPT)
 content-gemini.js    Reviewer DOM automation (Gemini)
 popup.html / popup.js Popup UI
+LICENSE              MIT License
 ```
 
 Plain JavaScript only—no build step.
@@ -79,4 +80,4 @@ Plain JavaScript only—no build step.
 
 ## License
 
-See repository defaults; add a `LICENSE` file if you plan to distribute publicly.
+[MIT License](LICENSE) — Copyright (c) 2026 Prithvi Bhargav
