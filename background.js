@@ -92,7 +92,7 @@ function parseChangesClaimed(text, speaker) {
   const match = text.match(/CHANGES:\s*(\d+)/i);
 
   if (!match) {
-    console.warn(`Council: CHANGES line not found in ${speaker} response`);
+    console.warn(`AI Council: CHANGES line not found in ${speaker} response`);
     return { text: text.trim(), changesClaimed: 0 };
   }
 
@@ -305,7 +305,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     const { status } = await chrome.storage.local.get("status");
     if (status === "working") {
-      sendResponse({ ok: false, error: "Council is already running." });
+      sendResponse({ ok: false, error: "AI Council is already running." });
       return;
     }
 

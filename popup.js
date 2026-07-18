@@ -193,8 +193,8 @@ startButton.addEventListener("click", async () => {
   if (!response?.ok) {
     render({
       status: "error",
-      error: response?.error || "Could not start Council.",
-      draftorStatus: response?.error || "Could not start Council.",
+      error: response?.error || "Could not start AI Council.",
+      draftorStatus: response?.error || "Could not start AI Council.",
       reviewerStatus: "Waiting."
     });
   }
