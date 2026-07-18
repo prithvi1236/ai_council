@@ -1,63 +1,56 @@
-const PROSE_BLOCK_SELECTORS = [
-  "message-content .markdown",
-  "message-content",
-  ".model-response-text",
-  ".response-content"
+const SEND_BUTTON_SELECTORS = [
+  'button[aria-label="Send message"]',
+  'button[aria-label*="Send"]',
+  'button[aria-label*="send"]',
+  'button[data-test-id="send-button"]',
+  'button.send-button',
+  'button[data-tooltip*="Send"]',
+  '[data-send-button]'
 ];
 
 function getConversationRoot() {
   return (
+    document.querySelector("#chat-history") ||
+    document.querySelector("infinite-scroller") ||
     document.querySelector("main") ||
     document.querySelector("chat-app") ||
     document.body
   );
 }
 
-function getAssistantProseBlocks() {
-  const root = getConversationRoot();
-  const matches = [];
-
-  for (const response of root.querySelectorAll("model-response")) {
-    for (const selector of PROSE_BLOCK_SELECTORS) {
-      for (const block of response.querySelectorAll(selector)) {
-        if (block instanceof HTMLElement) {
-          matches.push(block);
-        }
-      }
-    }
-  }
-
-  const uniqueBlocks = [];
-  const seen = new Set();
-
-  for (const block of matches) {
-    const isNested = matches.some(
-      (other) => other !== block && other.contains(block)
-    );
-
-    if (isNested || seen.has(block)) {
-      continue;
-    }
-
-    seen.add(block);
-    uniqueBlocks.push(block);
-  }
-
-  return uniqueBlocks.sort((left, right) => {
-    if (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_FOLLOWING) {
-      return -1;
-    }
-
-    if (left.compareDocumentPosition(right) & Node.DOCUMENT_POSITION_PRECEDING) {
-      return 1;
-    }
-
-    return 0;
-  });
+function getComposerRoot() {
+  return (
+    document.querySelector("input-area") ||
+    document.querySelector("rich-textarea")?.closest("form") ||
+    document.querySelector(".input-area") ||
+    document.querySelector("footer") ||
+    document.body
+  );
 }
 
-function countAssistantProseBlocks() {
-  return getAssistantProseBlocks().length;
+function getModelResponses() {
+  return Array.from(getConversationRoot().querySelectorAll("model-response"));
+}
+
+function countModelResponses() {
+  return getModelResponses().length;
+}
+
+function findProseInResponse(responseElement) {
+  if (!(responseElement instanceof HTMLElement)) {
+    return null;
+  }
+
+  return (
+    responseElement.querySelector(
+      "message-content.model-response-text div.markdown.markdown-main-panel"
+    ) ||
+    responseElement.querySelector("message-content .markdown") ||
+    responseElement.querySelector("div.markdown.markdown-main-panel") ||
+    responseElement.querySelector("div.markdown") ||
+    responseElement.querySelector(".model-response-text .markdown") ||
+    responseElement.querySelector("message-content.model-response-text")
+  );
 }
 
 function extractProseText(element) {
@@ -65,17 +58,60 @@ function extractProseText(element) {
     return "";
   }
 
-  return (element.innerText || element.textContent || "").trim();
+  const text = (element.innerText || element.textContent || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/^Gemini said\s*/i, "")
+    .trim();
+
+  return text;
+}
+
+function isMeaningfulResponse(text) {
+  if (!text) {
+    return false;
+  }
+
+  return text.replace(/^Gemini said\s*/i, "").trim().length > 0;
 }
 
 function getLatestResponseText(beforeCount) {
-  const blocks = getAssistantProseBlocks();
+  const responses = getModelResponses();
 
-  if (blocks.length <= beforeCount) {
+  if (responses.length <= beforeCount) {
     return "";
   }
 
-  return extractProseText(blocks[blocks.length - 1]);
+  const prose = findProseInResponse(responses[responses.length - 1]);
+
+  if (!(prose instanceof HTMLElement)) {
+    return "";
+  }
+
+  return extractProseText(prose);
+}
+
+function isGeminiStreaming() {
+  const stopButton =
+    document.querySelector('button[aria-label*="Stop"]') ||
+    document.querySelector('button[aria-label*="stop"]') ||
+    document.querySelector('[data-test-id="stop-button"]');
+
+  if (stopButton instanceof HTMLButtonElement && stopButton.offsetParent !== null) {
+    return true;
+  }
+
+  const latestResponse = getModelResponses().at(-1);
+
+  if (
+    latestResponse instanceof HTMLElement &&
+    latestResponse.querySelector(
+      '.streaming-animation, .result-streaming, [aria-busy="true"], .thinking-animation'
+    )
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 function getPromptInput() {
@@ -93,16 +129,60 @@ function getPromptInput() {
   return input;
 }
 
-function waitForSendButton(timeoutMs = 5000) {
+function getInputText(input) {
+  return (input.innerText || input.textContent || "").trim();
+}
+
+function findSendButton() {
+  const scopes = [getComposerRoot(), document.body];
+
+  for (const scope of scopes) {
+    for (const selector of SEND_BUTTON_SELECTORS) {
+      for (const candidate of scope.querySelectorAll(selector)) {
+        if (
+          candidate instanceof HTMLButtonElement &&
+          !candidate.disabled &&
+          candidate.offsetParent !== null
+        ) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+function waitForGeminiIdle(timeoutMs = 60000) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
-    const check = () => {
-      const button =
-        document.querySelector('button[aria-label="Send message"]') ||
-        document.querySelector('button[aria-label*="Send"]') ||
-        document.querySelector("button.send-button");
 
-      if (button instanceof HTMLButtonElement && !button.disabled) {
+    const check = () => {
+      if (!isGeminiStreaming()) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error("Timeout waiting for Reviewer to finish its current response."));
+        return;
+      }
+
+      setTimeout(check, 300);
+    };
+
+    check();
+  });
+}
+
+function waitForSendButton(timeoutMs = 15000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+
+    const check = () => {
+      const button = findSendButton();
+
+      if (button) {
         resolve(button);
         return;
       }
@@ -110,9 +190,31 @@ function waitForSendButton(timeoutMs = 5000) {
       if (Date.now() - start > timeoutMs) {
         reject(
           new Error(
-            "Couldn't find an enabled Gemini send button (button[aria-label='Send message'])."
+            "Couldn't find an enabled Gemini send button — try reloading the Reviewer tab."
           )
         );
+        return;
+      }
+
+      setTimeout(check, 150);
+    };
+
+    check();
+  });
+}
+
+function waitForInputPopulated(input, minLength, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+
+    const check = () => {
+      if (getInputText(input).length >= minLength) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() - start > timeoutMs) {
+        reject(new Error("Couldn't populate Gemini's input with the review prompt."));
         return;
       }
 
@@ -123,29 +225,71 @@ function waitForSendButton(timeoutMs = 5000) {
   });
 }
 
-async function injectPrompt(text) {
-  const input = getPromptInput();
-
+function setInputText(input, text) {
   input.focus();
-  input.textContent = text;
+
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(input);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+
+  const inserted = document.execCommand("insertText", false, text);
+
+  if (!inserted || getInputText(input).length < Math.min(text.trim().length, 20)) {
+    input.textContent = text;
+  }
+
   input.dispatchEvent(new Event("input", { bubbles: true }));
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+async function injectPrompt(text) {
+  await waitForGeminiIdle();
+
+  const input = getPromptInput();
+  setInputText(input, text);
+
+  const expectedLength = Math.min(text.trim().length, 40);
+  await waitForInputPopulated(input, expectedLength > 0 ? expectedLength : 1);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
   const sendButton = await waitForSendButton();
   sendButton.click();
 }
 
 function waitForResponseComplete(
   beforeCount,
-  { stableMs = 2000, timeoutMs = 60000 } = {}
+  { stableMs = 3500, timeoutMs = 120000 } = {}
 ) {
   return new Promise((resolve, reject) => {
     const root = getConversationRoot();
     let debounceTimer = null;
+    let lastSeenText = "";
+    let lastChangeAt = Date.now();
 
     const finish = () => {
+      if (isGeminiStreaming()) {
+        debounceTimer = setTimeout(finish, 400);
+        return;
+      }
+
       const latestText = getLatestResponseText(beforeCount);
 
-      if (!latestText) {
-        debounceTimer = setTimeout(finish, stableMs);
+      if (!isMeaningfulResponse(latestText)) {
+        debounceTimer = setTimeout(finish, 400);
+        return;
+      }
+
+      if (latestText !== lastSeenText) {
+        lastSeenText = latestText;
+        lastChangeAt = Date.now();
+        debounceTimer = setTimeout(finish, 400);
+        return;
+      }
+
+      if (Date.now() - lastChangeAt < stableMs) {
+        debounceTimer = setTimeout(finish, stableMs - (Date.now() - lastChangeAt) + 100);
         return;
       }
 
@@ -157,9 +301,15 @@ function waitForResponseComplete(
     const timeoutTimer = setTimeout(() => {
       observer.disconnect();
       clearTimeout(debounceTimer);
+
+      if (isGeminiStreaming()) {
+        reject(new Error("Timeout waiting for Reviewer's response to finish streaming."));
+        return;
+      }
+
       const latestText = getLatestResponseText(beforeCount);
 
-      if (latestText) {
+      if (isMeaningfulResponse(latestText)) {
         resolve(latestText);
         return;
       }
@@ -169,7 +319,7 @@ function waitForResponseComplete(
 
     const observer = new MutationObserver(() => {
       clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(finish, stableMs);
+      debounceTimer = setTimeout(finish, 400);
     });
 
     observer.observe(root, {
@@ -177,17 +327,17 @@ function waitForResponseComplete(
       subtree: true,
       characterData: true
     });
-    debounceTimer = setTimeout(finish, stableMs);
+    debounceTimer = setTimeout(finish, 400);
   });
 }
 
 async function askReviewer(prompt) {
   try {
-    const beforeCount = countAssistantProseBlocks();
+    const beforeCount = countModelResponses();
     await injectPrompt(prompt);
     const text = await waitForResponseComplete(beforeCount);
 
-    if (!text) {
+    if (!isMeaningfulResponse(text)) {
       throw new Error("Reviewer returned an empty response.");
     }
 
