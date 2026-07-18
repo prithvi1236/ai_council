@@ -46,6 +46,25 @@ function normalizeRounds(rounds) {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
 }
 
+function normalizeMaxWords(maxWords) {
+  const parsed = Number.parseInt(String(maxWords), 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 100;
+}
+
+function enforceVerdictWordCap(text, maxWords) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+
+  if (wordCount <= maxWords * 1.2) {
+    return { text: text.trim(), wordCount };
+  }
+
+  return {
+    text: `${words.slice(0, maxWords).join(" ")}…`,
+    wordCount: maxWords
+  };
+}
+
 const CHANGES_SUFFIX =
   " At the end, output exactly one line: CHANGES: N — where N is the number of substantive changes/issues (ignore style nitpicks, count only issues with claims, conclusions, or reasoning).";
 
@@ -61,10 +80,11 @@ function buildRefinePrompt(previousReview) {
   return `Refine your answer based on this review: ${previousReview}.${CHANGES_SUFFIX}`;
 }
 
-function buildVerdictPrompt(question) {
+function buildVerdictPrompt(question, maxWords) {
   return (
     `Given the full review process above for the question '${question}', ` +
-    "give a single final verdict: your best, most refined answer to the original question, clearly stated."
+    "give a single final verdict: your best, most refined answer to the original question, clearly stated, " +
+    `in no more than ${maxWords} words.`
   );
 }
 
@@ -121,8 +141,9 @@ async function askReviewer(reviewerTab, question, draftAnswer) {
   return sendReviewerPrompt(reviewerTab, buildReviewPrompt(question, draftAnswer));
 }
 
-async function runCouncil(question, roundsInput) {
+async function runCouncil(question, roundsInput, maxWordsInput) {
   const rounds = normalizeRounds(roundsInput);
+  const maxWords = normalizeMaxWords(maxWordsInput);
   const draftorTab = await getDraftorTab();
 
   if (!draftorTab?.id) {
@@ -157,6 +178,8 @@ async function runCouncil(question, roundsInput) {
     verdict: "",
     question,
     rounds,
+    maxWords,
+    verdictWordCount: 0,
     transcript: [],
     draftorStatus: `Draftor is answering (round 1/${rounds})...`,
     reviewerStatus: "Waiting..."
@@ -230,10 +253,12 @@ async function runCouncil(question, roundsInput) {
       reviewerStatus: "Reviewer is writing final verdict..."
     });
 
-    const verdictText = await sendReviewerPrompt(
+    let verdictText = await sendReviewerPrompt(
       reviewerTab,
-      buildVerdictPrompt(question)
+      buildVerdictPrompt(question, maxWords)
     );
+    const cappedVerdict = enforceVerdictWordCap(verdictText, maxWords);
+    verdictText = cappedVerdict.text;
     transcript.push({
       speaker: "Reviewer",
       text: verdictText,
@@ -247,6 +272,8 @@ async function runCouncil(question, roundsInput) {
       draftorStatus: "Review rounds complete.",
       reviewerStatus: "Final verdict complete.",
       verdict: verdictText,
+      verdictWordCount: cappedVerdict.wordCount,
+      maxWords,
       transcript: [...transcript]
     });
   } catch (error) {
@@ -269,6 +296,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     const question = message.question?.trim();
     const rounds = normalizeRounds(message.rounds);
+    const maxWords = normalizeMaxWords(message.maxWords);
 
     if (!question) {
       sendResponse({ ok: false, error: "Enter a question before starting." });
@@ -281,7 +309,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    await runCouncil(question, rounds);
+    await runCouncil(question, rounds, maxWords);
     sendResponse({ ok: true });
   })();
 
