@@ -90,28 +90,41 @@ function getLatestResponseText(beforeCount) {
   return extractProseText(prose);
 }
 
-function isGeminiStreaming() {
+function isComposerGenerating() {
+  const composer = getComposerRoot();
   const stopButton =
-    document.querySelector('button[aria-label*="Stop"]') ||
-    document.querySelector('button[aria-label*="stop"]') ||
-    document.querySelector('[data-test-id="stop-button"]');
+    composer.querySelector('button[aria-label="Stop response"]') ||
+    composer.querySelector('button[aria-label*="Stop generating"]') ||
+    composer.querySelector('button[aria-label*="Stop response"]') ||
+    composer.querySelector('[data-test-id="stop-button"]');
 
-  if (stopButton instanceof HTMLButtonElement && stopButton.offsetParent !== null) {
-    return true;
+  return stopButton instanceof HTMLButtonElement && stopButton.offsetParent !== null;
+}
+
+function isResponseStreaming(responseElement) {
+  if (!(responseElement instanceof HTMLElement)) {
+    return false;
   }
 
-  const latestResponse = getModelResponses().at(-1);
-
-  if (
-    latestResponse instanceof HTMLElement &&
-    latestResponse.querySelector(
-      '.streaming-animation, .result-streaming, [aria-busy="true"], .thinking-animation'
+  return Boolean(
+    responseElement.querySelector(
+      '.streaming-animation, .result-streaming, .thinking-animation, [data-streaming="true"]'
     )
-  ) {
+  );
+}
+
+function isGeminiStreaming(beforeCount) {
+  if (isComposerGenerating()) {
     return true;
   }
 
-  return false;
+  const responses = getModelResponses();
+
+  if (responses.length <= beforeCount) {
+    return false;
+  }
+
+  return isResponseStreaming(responses[responses.length - 1]);
 }
 
 function getPromptInput() {
@@ -158,7 +171,7 @@ function waitForGeminiIdle(timeoutMs = 60000) {
     const start = Date.now();
 
     const check = () => {
-      if (!isGeminiStreaming()) {
+      if (!isComposerGenerating()) {
         resolve();
         return;
       }
@@ -269,11 +282,6 @@ function waitForResponseComplete(
     let lastChangeAt = Date.now();
 
     const finish = () => {
-      if (isGeminiStreaming()) {
-        debounceTimer = setTimeout(finish, 400);
-        return;
-      }
-
       const latestText = getLatestResponseText(beforeCount);
 
       if (!isMeaningfulResponse(latestText)) {
@@ -288,29 +296,35 @@ function waitForResponseComplete(
         return;
       }
 
-      if (Date.now() - lastChangeAt < stableMs) {
-        debounceTimer = setTimeout(finish, stableMs - (Date.now() - lastChangeAt) + 100);
+      const stableFor = Date.now() - lastChangeAt;
+
+      if (stableFor >= stableMs) {
+        observer.disconnect();
+        clearTimeout(timeoutTimer);
+        resolve(latestText);
         return;
       }
 
-      observer.disconnect();
-      clearTimeout(timeoutTimer);
-      resolve(latestText);
+      if (isGeminiStreaming(beforeCount)) {
+        debounceTimer = setTimeout(finish, 400);
+        return;
+      }
+
+      debounceTimer = setTimeout(finish, stableMs - stableFor + 100);
     };
 
     const timeoutTimer = setTimeout(() => {
       observer.disconnect();
       clearTimeout(debounceTimer);
-
-      if (isGeminiStreaming()) {
-        reject(new Error("Timeout waiting for Reviewer's response to finish streaming."));
-        return;
-      }
-
       const latestText = getLatestResponseText(beforeCount);
 
       if (isMeaningfulResponse(latestText)) {
         resolve(latestText);
+        return;
+      }
+
+      if (isGeminiStreaming(beforeCount)) {
+        reject(new Error("Timeout waiting for Reviewer's response to finish streaming."));
         return;
       }
 
