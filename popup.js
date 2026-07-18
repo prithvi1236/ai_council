@@ -4,7 +4,34 @@ const startButton = document.querySelector("#start");
 const draftorStatusElement = document.querySelector("#draftor-status");
 const reviewerStatusElement = document.querySelector("#reviewer-status");
 const verdictElement = document.querySelector("#verdict");
+const draftorScoreElement = document.querySelector("#draftor-score");
+const reviewerScoreElement = document.querySelector("#reviewer-score");
 const transcriptElement = document.querySelector("#transcript");
+
+function computeScoreboard(transcript) {
+  return (transcript || []).reduce(
+    (totals, entry) => {
+      if (entry.round === "verdict") {
+        return totals;
+      }
+
+      if (entry.speaker === "Draftor") {
+        totals.draftor += entry.changesClaimed || 0;
+      } else if (entry.speaker === "Reviewer") {
+        totals.reviewer += entry.changesClaimed || 0;
+      }
+
+      return totals;
+    },
+    { draftor: 0, reviewer: 0 }
+  );
+}
+
+function renderScoreboard(transcript) {
+  const totals = computeScoreboard(transcript);
+  draftorScoreElement.textContent = String(totals.draftor);
+  reviewerScoreElement.textContent = String(totals.reviewer);
+}
 
 function formatTranscriptLabel(entry) {
   if (entry.round === "verdict") {
@@ -81,6 +108,7 @@ function render(state) {
   }
 
   verdictElement.textContent = verdict || "No verdict yet.";
+  renderScoreboard(transcript);
   renderTranscript(transcript);
 }
 

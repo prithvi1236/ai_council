@@ -23,6 +23,9 @@
       .status-block { margin: 12px 0; }
       .status-line { margin: 0 0 4px; min-height: 20px; }
       .status-label { color: #5b6475; font-size: 12px; font-weight: 600; margin: 0 0 2px; }
+      #scoreboard { background: #f9fafb; border-radius: 8px; margin: 12px 0; padding: 12px; }
+      #scoreboard p { margin: 0 0 4px; }
+      .scoreboard-caption { color: #5b6475; font-size: 12px; margin: 8px 0 0; }
       #verdict { background: #f4f6f9; border-radius: 8px; min-height: 48px; padding: 12px; white-space: pre-wrap; }
       #transcript-details { margin-top: 12px; }
       #transcript-details summary { cursor: pointer; font-weight: 600; }
@@ -50,6 +53,11 @@
       <p class="status-label">Reviewer</p>
       <p id="reviewer-status" class="status-line" aria-live="polite">Waiting.</p>
     </div>
+    <section id="scoreboard" aria-label="Scoreboard">
+      <p>Draftor: <span id="draftor-score">0</span> changes made</p>
+      <p>Reviewer: <span id="reviewer-score">0</span> issues raised</p>
+      <p class="scoreboard-caption">Self-reported by each model, not independently verified.</p>
+    </section>
     <section id="verdict" aria-label="Verdict">No verdict yet.</section>
     <details id="transcript-details">
       <summary>Review history</summary>
