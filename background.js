@@ -46,15 +46,19 @@ function normalizeRounds(rounds) {
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
 }
 
+const CHANGES_SUFFIX =
+  " At the end, output exactly one line: CHANGES: N — where N is the number of substantive changes/issues (ignore style nitpicks, count only issues with claims, conclusions, or reasoning).";
+
 function buildReviewPrompt(question, draftAnswer) {
   return (
     `Here is a proposed answer to '${question}': ${draftAnswer}. ` +
-    "Review this critically — identify weaknesses, gaps, missing considerations, or errors."
+    "Review this critically — identify weaknesses, gaps, missing considerations, or errors." +
+    CHANGES_SUFFIX
   );
 }
 
 function buildRefinePrompt(previousReview) {
-  return `Refine your answer based on this review: ${previousReview}.`;
+  return `Refine your answer based on this review: ${previousReview}.${CHANGES_SUFFIX}`;
 }
 
 function buildVerdictPrompt(question) {
@@ -62,6 +66,23 @@ function buildVerdictPrompt(question) {
     `Given the full review process above for the question '${question}', ` +
     "give a single final verdict: your best, most refined answer to the original question, clearly stated."
   );
+}
+
+function parseChangesClaimed(text, speaker) {
+  const match = text.match(/CHANGES:\s*(\d+)/i);
+
+  if (!match) {
+    console.warn(`Council: CHANGES line not found in ${speaker} response`);
+    return { text: text.trim(), changesClaimed: 0 };
+  }
+
+  const changesClaimed = Number.parseInt(match[1], 10);
+  const cleaned = text.replace(/[\n\r\s]*CHANGES:\s*\d+\s*$/i, "").trim();
+
+  return {
+    text: cleaned,
+    changesClaimed: Number.isFinite(changesClaimed) ? changesClaimed : 0
+  };
 }
 
 async function askDraftor(draftorTab, question) {
@@ -162,7 +183,25 @@ async function runCouncil(question, roundsInput) {
         round === 1 ? question : buildRefinePrompt(lastReview);
 
       lastDraft = await askDraftor(draftorTab, draftPrompt);
-      transcript.push({ speaker: "Draftor", text: lastDraft, round });
+
+      if (round === 1) {
+        transcript.push({
+          speaker: "Draftor",
+          text: lastDraft,
+          round,
+          changesClaimed: 0
+        });
+      } else {
+        const parsedDraft = parseChangesClaimed(lastDraft, "Draftor");
+        lastDraft = parsedDraft.text;
+        transcript.push({
+          speaker: "Draftor",
+          text: parsedDraft.text,
+          round,
+          changesClaimed: parsedDraft.changesClaimed
+        });
+      }
+
       await setRunState({ transcript: [...transcript] });
 
       failedStep = "Reviewer";
@@ -173,7 +212,14 @@ async function runCouncil(question, roundsInput) {
       });
 
       lastReview = await askReviewer(reviewerTab, question, lastDraft);
-      transcript.push({ speaker: "Reviewer", text: lastReview, round });
+      const parsedReview = parseChangesClaimed(lastReview, "Reviewer");
+      lastReview = parsedReview.text;
+      transcript.push({
+        speaker: "Reviewer",
+        text: parsedReview.text,
+        round,
+        changesClaimed: parsedReview.changesClaimed
+      });
       await setRunState({ transcript: [...transcript] });
     }
 
@@ -188,7 +234,12 @@ async function runCouncil(question, roundsInput) {
       reviewerTab,
       buildVerdictPrompt(question)
     );
-    transcript.push({ speaker: "Reviewer", text: verdictText, round: "verdict" });
+    transcript.push({
+      speaker: "Reviewer",
+      text: verdictText,
+      round: "verdict",
+      changesClaimed: 0
+    });
 
     await setRunState({
       status: "complete",
