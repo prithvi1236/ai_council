@@ -8,7 +8,41 @@ const verdictHeadingElement = document.querySelector("#verdict-heading");
 const verdictElement = document.querySelector("#verdict");
 const draftorScoreElement = document.querySelector("#draftor-score");
 const reviewerScoreElement = document.querySelector("#reviewer-score");
+const resultsSection = document.querySelector("#results");
+const scoreboardSection = document.querySelector("#scoreboard");
+const setupErrorElement = document.querySelector("#setup-error");
 const transcriptElement = document.querySelector("#transcript");
+
+function shouldShowResults(status, transcript) {
+  if (status === "working" || status === "complete") {
+    return true;
+  }
+
+  if (Array.isArray(transcript) && transcript.length > 0) {
+    return true;
+  }
+
+  return status === "error" && Array.isArray(transcript) && transcript.length > 0;
+}
+
+function showSetupError(message) {
+  if (!message) {
+    setupErrorElement.hidden = true;
+    setupErrorElement.textContent = "";
+    return;
+  }
+
+  setupErrorElement.hidden = false;
+  setupErrorElement.textContent = message;
+}
+
+function shouldShowScoreboard(status, transcript) {
+  if (status === "working" || status === "complete") {
+    return true;
+  }
+
+  return Array.isArray(transcript) && transcript.some((entry) => entry.round !== "verdict");
+}
 
 function computeScoreboard(transcript) {
   return (transcript || []).reduce(
@@ -128,6 +162,16 @@ function render(state) {
   }
 
   renderVerdict(verdict, verdictWordCount, maxWords, status);
+  const showResults = shouldShowResults(status, transcript);
+  resultsSection.hidden = !showResults;
+  scoreboardSection.hidden = !shouldShowScoreboard(status, transcript);
+
+  if (status === "error" && error && !showResults) {
+    showSetupError(error);
+  } else {
+    showSetupError("");
+  }
+
   renderScoreboard(transcript);
   renderTranscript(transcript);
 }
@@ -154,34 +198,21 @@ startButton.addEventListener("click", async () => {
   const maxWords = Number.parseInt(maxWordsInput.value, 10) || 100;
 
   if (!question) {
-    render({
-      status: "error",
-      error: "Enter a question before starting.",
-      draftorStatus: "Enter a question before starting.",
-      reviewerStatus: "Waiting."
-    });
+    showSetupError("Enter a question before starting.");
     return;
   }
 
   if (rounds < 1) {
-    render({
-      status: "error",
-      error: "Review rounds must be at least 1.",
-      draftorStatus: "Review rounds must be at least 1.",
-      reviewerStatus: "Waiting."
-    });
+    showSetupError("Review rounds must be at least 1.");
     return;
   }
 
   if (maxWords < 1) {
-    render({
-      status: "error",
-      error: "Max verdict words must be at least 1.",
-      draftorStatus: "Max verdict words must be at least 1.",
-      reviewerStatus: "Waiting."
-    });
+    showSetupError("Max verdict words must be at least 1.");
     return;
   }
+
+  showSetupError("");
 
   const response = await chrome.runtime.sendMessage({
     type: "START_RUN",
@@ -191,12 +222,7 @@ startButton.addEventListener("click", async () => {
   });
 
   if (!response?.ok) {
-    render({
-      status: "error",
-      error: response?.error || "Could not start AI Council.",
-      draftorStatus: response?.error || "Could not start AI Council.",
-      reviewerStatus: "Waiting."
-    });
+    showSetupError(response?.error || "Could not start AI Council.");
   }
 });
 

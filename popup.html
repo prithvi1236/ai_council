@@ -14,63 +14,224 @@
         width: 360px;
       }
 
-      h1 { font-size: 20px; margin: 0 0 12px; }
-      label { display: block; font-weight: 600; margin-bottom: 6px; }
-      textarea { box-sizing: border-box; min-height: 100px; padding: 8px; resize: vertical; width: 100%; }
-      input[type="number"] { box-sizing: border-box; padding: 8px; width: 100%; }
-      button { margin-top: 10px; padding: 8px 12px; }
-      .field { margin-bottom: 12px; }
-      .status-block { margin: 12px 0; }
-      .status-line { margin: 0 0 4px; min-height: 20px; }
-      .status-label { color: #5b6475; font-size: 12px; font-weight: 600; margin: 0 0 2px; }
-      #scoreboard { background: #f9fafb; border-radius: 8px; margin: 12px 0; padding: 12px; }
-      #scoreboard p { margin: 0 0 4px; }
-      .scoreboard-caption { color: #5b6475; font-size: 12px; margin: 8px 0 0; }
-      .verdict-heading { font-size: 12px; font-weight: 700; margin: 0 0 6px; }
-      #verdict { background: #f4f6f9; border-radius: 8px; min-height: 48px; padding: 12px; white-space: pre-wrap; }
-      #transcript-details { margin-top: 12px; }
-      #transcript-details summary { cursor: pointer; font-weight: 600; }
-      .transcript-entry { border-top: 1px solid #d8dee8; margin-top: 10px; padding-top: 10px; }
-      .transcript-entry:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
-      .transcript-heading { font-size: 12px; font-weight: 700; margin: 0 0 6px; }
-      .transcript-text { margin: 0; white-space: pre-wrap; }
-      .error { color: #b42318; }
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+      }
+
+      h1 {
+        font-size: 20px;
+        margin: 0 0 4px;
+      }
+
+      .hint {
+        color: #5b6475;
+        font-size: 12px;
+        line-height: 1.4;
+        margin: 0 0 16px;
+      }
+
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      textarea {
+        min-height: 96px;
+        padding: 8px;
+        resize: vertical;
+        width: 100%;
+      }
+
+      input[type="number"] {
+        padding: 8px;
+        width: 100%;
+      }
+
+      .field {
+        margin-bottom: 12px;
+      }
+
+      .settings-row {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 1fr 1fr;
+        margin-bottom: 12px;
+      }
+
+      #start {
+        background: #172033;
+        border: 0;
+        border-radius: 8px;
+        color: #fff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        margin: 0;
+        padding: 10px 12px;
+        width: 100%;
+      }
+
+      #start:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+      }
+
+      .results {
+        border-top: 1px solid #d8dee8;
+        margin-top: 16px;
+        padding-top: 16px;
+      }
+
+      .results[hidden] {
+        display: none;
+      }
+
+      .status-block {
+        background: #f9fafb;
+        border-radius: 8px;
+        margin-bottom: 12px;
+        padding: 12px;
+      }
+
+      .status-line {
+        margin: 0 0 8px;
+        min-height: 20px;
+      }
+
+      .status-line:last-child {
+        margin-bottom: 0;
+      }
+
+      .status-label {
+        color: #5b6475;
+        font-size: 12px;
+        font-weight: 600;
+        margin: 0 0 2px;
+      }
+
+      .verdict-heading {
+        font-size: 12px;
+        font-weight: 700;
+        margin: 0 0 6px;
+      }
+
+      #verdict {
+        background: #f4f6f9;
+        border-radius: 8px;
+        min-height: 48px;
+        padding: 12px;
+        white-space: pre-wrap;
+      }
+
+      #scoreboard {
+        background: #f9fafb;
+        border-radius: 8px;
+        margin-top: 12px;
+        padding: 12px;
+      }
+
+      #scoreboard[hidden] {
+        display: none;
+      }
+
+      #scoreboard p {
+        margin: 0 0 4px;
+      }
+
+      .scoreboard-caption {
+        color: #5b6475;
+        font-size: 12px;
+        margin: 8px 0 0;
+      }
+
+      #transcript-details {
+        margin-top: 12px;
+      }
+
+      #transcript-details summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .transcript-entry {
+        border-top: 1px solid #d8dee8;
+        margin-top: 10px;
+        padding-top: 10px;
+      }
+
+      .transcript-entry:first-child {
+        border-top: 0;
+        margin-top: 0;
+        padding-top: 0;
+      }
+
+      .transcript-heading {
+        font-size: 12px;
+        font-weight: 700;
+        margin: 0 0 6px;
+      }
+
+      .transcript-text {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+
+      .error {
+        color: #b42318;
+      }
     </style>
   </head>
   <body>
     <h1>AI Council</h1>
-    <div class="field">
-      <label for="question">Question</label>
-      <textarea id="question" placeholder="What should the council discuss?"></textarea>
-    </div>
-    <div class="field">
-      <label for="rounds">Review rounds</label>
-      <input id="rounds" type="number" min="1" step="1" value="1">
-    </div>
-    <div class="field">
-      <label for="max-words">Max verdict words</label>
-      <input id="max-words" type="number" min="1" step="1" value="100">
-    </div>
-    <button id="start" type="button">Start</button>
-    <div class="status-block">
-      <p class="status-label">Draftor</p>
-      <p id="draftor-status" class="status-line" aria-live="polite">Ready.</p>
-      <p class="status-label">Reviewer</p>
-      <p id="reviewer-status" class="status-line" aria-live="polite">Waiting.</p>
-    </div>
-    <section id="scoreboard" aria-label="Scoreboard">
-      <p>Draftor: <span id="draftor-score">0</span> changes made</p>
-      <p>Reviewer: <span id="reviewer-score">0</span> issues raised</p>
-      <p class="scoreboard-caption">Self-reported by each model, not independently verified.</p>
+    <p class="hint">Requires open, logged-in ChatGPT & Gemini tabs.</p>
+
+    <section class="setup" aria-label="Setup">
+      <div class="field">
+        <label for="question">Question</label>
+        <textarea id="question" placeholder="What should the council discuss?"></textarea>
+      </div>
+      <div class="settings-row">
+        <div>
+          <label for="rounds">Review rounds</label>
+          <input id="rounds" type="number" min="1" step="1" value="1">
+        </div>
+        <div>
+          <label for="max-words">Max verdict words</label>
+          <input id="max-words" type="number" min="1" step="1" value="100">
+        </div>
+      </div>
+      <button id="start" type="button">Start council</button>
+      <p id="setup-error" class="error" hidden></p>
     </section>
-    <section aria-label="Verdict">
-      <p id="verdict-heading" class="verdict-heading">Verdict</p>
-      <div id="verdict">No verdict yet.</div>
+
+    <section id="results" class="results" aria-label="Results" hidden>
+      <div class="status-block">
+        <p class="status-label">Draftor (ChatGPT)</p>
+        <p id="draftor-status" class="status-line" aria-live="polite">Ready.</p>
+        <p class="status-label">Reviewer (Gemini)</p>
+        <p id="reviewer-status" class="status-line" aria-live="polite">Waiting.</p>
+      </div>
+
+      <section aria-label="Verdict">
+        <p id="verdict-heading" class="verdict-heading">Verdict</p>
+        <div id="verdict">No verdict yet.</div>
+      </section>
+
+      <section id="scoreboard" aria-label="Scoreboard" hidden>
+        <p>Draftor: <span id="draftor-score">0</span> changes made</p>
+        <p>Reviewer: <span id="reviewer-score">0</span> issues raised</p>
+        <p class="scoreboard-caption">Self-reported by each model, not independently verified.</p>
+      </section>
+
+      <details id="transcript-details">
+        <summary>Review history</summary>
+        <div id="transcript">No review history yet.</div>
+      </details>
     </section>
-    <details id="transcript-details">
-      <summary>Review history</summary>
-      <div id="transcript">No review history yet.</div>
-    </details>
+
     <script src="popup.js"></script>
   </body>
 </html>
