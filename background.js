@@ -41,6 +41,11 @@ async function sendTabMessage(tab, urlPattern, scriptFile, message, roleName) {
   }
 }
 
+function normalizeRounds(rounds) {
+  const parsed = Number.parseInt(String(rounds), 10);
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
+}
+
 function buildReviewPrompt(question, draftAnswer) {
   return (
     `Here is a proposed answer to '${question}': ${draftAnswer}. ` +
@@ -48,7 +53,55 @@ function buildReviewPrompt(question, draftAnswer) {
   );
 }
 
-async function runCouncil(question) {
+function buildRefinePrompt(previousReview) {
+  return `Refine your answer based on this review: ${previousReview}.`;
+}
+
+function buildVerdictPrompt(question) {
+  return (
+    `Given the full review process above for the question '${question}', ` +
+    "give a single final verdict: your best, most refined answer to the original question, clearly stated."
+  );
+}
+
+async function askDraftor(draftorTab, question) {
+  const response = await sendTabMessage(
+    draftorTab,
+    DRAFTOR_URL_PATTERN,
+    "content-chatgpt.js",
+    { type: "DRAFT_QUESTION", question },
+    "Draftor"
+  );
+
+  if (!response?.ok) {
+    throw new Error(response?.error || "Draftor did not return an answer.");
+  }
+
+  return response.text;
+}
+
+async function sendReviewerPrompt(reviewerTab, prompt) {
+  const response = await sendTabMessage(
+    reviewerTab,
+    REVIEWER_URL_PATTERN,
+    "content-gemini.js",
+    { type: "REVIEW_DRAFT", prompt },
+    "Reviewer"
+  );
+
+  if (!response?.ok) {
+    throw new Error(response?.error || "Reviewer did not return a response.");
+  }
+
+  return response.text;
+}
+
+async function askReviewer(reviewerTab, question, draftAnswer) {
+  return sendReviewerPrompt(reviewerTab, buildReviewPrompt(question, draftAnswer));
+}
+
+async function runCouncil(question, roundsInput) {
+  const rounds = normalizeRounds(roundsInput);
   const draftorTab = await getDraftorTab();
 
   if (!draftorTab?.id) {
@@ -57,7 +110,8 @@ async function runCouncil(question) {
       error: "Could not find an open Draftor tab at chat.openai.com.",
       draftorStatus: "Draftor tab not found.",
       reviewerStatus: "Waiting.",
-      verdict: ""
+      verdict: "",
+      transcript: []
     });
     return;
   }
@@ -70,7 +124,8 @@ async function runCouncil(question) {
       error: "Could not find an open Reviewer tab at gemini.google.com.",
       draftorStatus: "Ready.",
       reviewerStatus: "Reviewer tab not found.",
-      verdict: ""
+      verdict: "",
+      transcript: []
     });
     return;
   }
@@ -80,63 +135,77 @@ async function runCouncil(question) {
     error: "",
     verdict: "",
     question,
-    draftorStatus: "Draftor is answering...",
+    rounds,
+    transcript: [],
+    draftorStatus: `Draftor is answering (round 1/${rounds})...`,
     reviewerStatus: "Waiting..."
   });
 
-  let draftAnswer = "";
+  const transcript = [];
+  let lastReview = "";
+  let lastDraft = "";
+  let failedStep = "Draftor";
 
   try {
-    const draftResponse = await sendTabMessage(
-      draftorTab,
-      DRAFTOR_URL_PATTERN,
-      "content-chatgpt.js",
-      { type: "DRAFT_QUESTION", question },
-      "Draftor"
-    );
+    for (let round = 1; round <= rounds; round += 1) {
+      failedStep = "Draftor";
 
-    if (!draftResponse?.ok) {
-      throw new Error(draftResponse?.error || "Draftor did not return an answer.");
+      await setRunState({
+        draftorStatus:
+          round === 1
+            ? `Draftor is answering (round ${round}/${rounds})...`
+            : `Draftor is refining (round ${round}/${rounds})...`,
+        reviewerStatus: round === 1 ? "Waiting..." : "Waiting for revision..."
+      });
+
+      const draftPrompt =
+        round === 1 ? question : buildRefinePrompt(lastReview);
+
+      lastDraft = await askDraftor(draftorTab, draftPrompt);
+      transcript.push({ speaker: "Draftor", text: lastDraft, round });
+      await setRunState({ transcript: [...transcript] });
+
+      failedStep = "Reviewer";
+
+      await setRunState({
+        draftorStatus: `Round ${round} draft complete.`,
+        reviewerStatus: `Reviewer checking round ${round}/${rounds}...`
+      });
+
+      lastReview = await askReviewer(reviewerTab, question, lastDraft);
+      transcript.push({ speaker: "Reviewer", text: lastReview, round });
+      await setRunState({ transcript: [...transcript] });
     }
 
-    draftAnswer = draftResponse.text;
+    failedStep = "Reviewer";
 
     await setRunState({
-      draftorStatus: "Draft complete.",
-      reviewerStatus: "Reviewer checking the draft..."
+      draftorStatus: "Review rounds complete.",
+      reviewerStatus: "Reviewer is writing final verdict..."
     });
 
-    const reviewResponse = await sendTabMessage(
+    const verdictText = await sendReviewerPrompt(
       reviewerTab,
-      REVIEWER_URL_PATTERN,
-      "content-gemini.js",
-      {
-        type: "REVIEW_DRAFT",
-        prompt: buildReviewPrompt(question, draftAnswer)
-      },
-      "Reviewer"
+      buildVerdictPrompt(question)
     );
-
-    if (!reviewResponse?.ok) {
-      throw new Error(reviewResponse?.error || "Reviewer did not return a critique.");
-    }
+    transcript.push({ speaker: "Reviewer", text: verdictText, round: "verdict" });
 
     await setRunState({
       status: "complete",
       error: "",
-      draftorStatus: "Draft complete.",
-      reviewerStatus: "Review complete.",
-      verdict: reviewResponse.text
+      draftorStatus: "Review rounds complete.",
+      reviewerStatus: "Final verdict complete.",
+      verdict: verdictText,
+      transcript: [...transcript]
     });
   } catch (error) {
-    const failedStep = draftAnswer ? "Reviewer" : "Draftor";
-
     await setRunState({
       status: "error",
       error: `${failedStep}: ${error.message}`,
-      draftorStatus: draftAnswer ? "Draft complete." : "Draftor failed.",
-      reviewerStatus: draftAnswer ? "Reviewer failed." : "Waiting.",
-      verdict: ""
+      draftorStatus: failedStep === "Draftor" ? "Draftor failed." : "Review rounds complete.",
+      reviewerStatus: failedStep === "Reviewer" ? "Reviewer failed." : "Waiting.",
+      verdict: "",
+      transcript: [...transcript]
     });
   }
 }
@@ -148,6 +217,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   (async () => {
     const question = message.question?.trim();
+    const rounds = normalizeRounds(message.rounds);
 
     if (!question) {
       sendResponse({ ok: false, error: "Enter a question before starting." });
@@ -160,7 +230,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    await runCouncil(question);
+    await runCouncil(question, rounds);
     sendResponse({ ok: true });
   })();
 

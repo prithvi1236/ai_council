@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Council",
-  "version": "0.2.0",
-  "description": "Have open ChatGPT and Gemini tabs review each other's answers.",
+  "version": "0.3.0",
+  "description": "Have open ChatGPT and Gemini tabs review and refine answers over multiple rounds.",
   "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": [
     "https://chat.openai.com/*",
