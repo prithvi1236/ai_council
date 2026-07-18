@@ -26,6 +26,7 @@
       #scoreboard { background: #f9fafb; border-radius: 8px; margin: 12px 0; padding: 12px; }
       #scoreboard p { margin: 0 0 4px; }
       .scoreboard-caption { color: #5b6475; font-size: 12px; margin: 8px 0 0; }
+      .verdict-heading { font-size: 12px; font-weight: 700; margin: 0 0 6px; }
       #verdict { background: #f4f6f9; border-radius: 8px; min-height: 48px; padding: 12px; white-space: pre-wrap; }
       #transcript-details { margin-top: 12px; }
       #transcript-details summary { cursor: pointer; font-weight: 600; }
@@ -46,6 +47,10 @@
       <label for="rounds">Review rounds</label>
       <input id="rounds" type="number" min="1" step="1" value="1">
     </div>
+    <div class="field">
+      <label for="max-words">Max verdict words</label>
+      <input id="max-words" type="number" min="1" step="1" value="100">
+    </div>
     <button id="start" type="button">Start</button>
     <div class="status-block">
       <p class="status-label">Draftor</p>
@@ -58,7 +63,10 @@
       <p>Reviewer: <span id="reviewer-score">0</span> issues raised</p>
       <p class="scoreboard-caption">Self-reported by each model, not independently verified.</p>
     </section>
-    <section id="verdict" aria-label="Verdict">No verdict yet.</section>
+    <section aria-label="Verdict">
+      <p id="verdict-heading" class="verdict-heading">Verdict</p>
+      <div id="verdict">No verdict yet.</div>
+    </section>
     <details id="transcript-details">
       <summary>Review history</summary>
       <div id="transcript">No review history yet.</div>

@@ -1,8 +1,10 @@
 const questionInput = document.querySelector("#question");
 const roundsInput = document.querySelector("#rounds");
+const maxWordsInput = document.querySelector("#max-words");
 const startButton = document.querySelector("#start");
 const draftorStatusElement = document.querySelector("#draftor-status");
 const reviewerStatusElement = document.querySelector("#reviewer-status");
+const verdictHeadingElement = document.querySelector("#verdict-heading");
 const verdictElement = document.querySelector("#verdict");
 const draftorScoreElement = document.querySelector("#draftor-score");
 const reviewerScoreElement = document.querySelector("#reviewer-score");
@@ -66,6 +68,17 @@ function renderTranscript(transcript) {
   }
 }
 
+function renderVerdict(verdict, verdictWordCount, maxWords, status) {
+  if (status === "complete" && verdict) {
+    verdictHeadingElement.textContent = `Verdict (${verdictWordCount}/${maxWords} words)`;
+    verdictElement.textContent = verdict;
+    return;
+  }
+
+  verdictHeadingElement.textContent = "Verdict";
+  verdictElement.textContent = verdict || "No verdict yet.";
+}
+
 function render(state) {
   const {
     status = "idle",
@@ -73,6 +86,8 @@ function render(state) {
     verdict = "",
     question = "",
     rounds = 1,
+    maxWords = 100,
+    verdictWordCount = 0,
     transcript = [],
     draftorStatus = "Ready.",
     reviewerStatus = "Waiting."
@@ -86,8 +101,13 @@ function render(state) {
     roundsInput.value = String(rounds);
   }
 
+  if (document.activeElement !== maxWordsInput) {
+    maxWordsInput.value = String(maxWords);
+  }
+
   startButton.disabled = status === "working";
   roundsInput.disabled = status === "working";
+  maxWordsInput.disabled = status === "working";
   draftorStatusElement.classList.toggle("error", status === "error" && draftorStatus.includes("failed"));
   reviewerStatusElement.classList.toggle("error", status === "error" && reviewerStatus.includes("failed"));
 
@@ -107,7 +127,7 @@ function render(state) {
     reviewerStatusElement.textContent = reviewerStatus;
   }
 
-  verdictElement.textContent = verdict || "No verdict yet.";
+  renderVerdict(verdict, verdictWordCount, maxWords, status);
   renderScoreboard(transcript);
   renderTranscript(transcript);
 }
@@ -117,6 +137,8 @@ async function loadState() {
     "status",
     "error",
     "verdict",
+    "verdictWordCount",
+    "maxWords",
     "question",
     "rounds",
     "transcript",
@@ -129,6 +151,7 @@ async function loadState() {
 startButton.addEventListener("click", async () => {
   const question = questionInput.value.trim();
   const rounds = Number.parseInt(roundsInput.value, 10) || 1;
+  const maxWords = Number.parseInt(maxWordsInput.value, 10) || 100;
 
   if (!question) {
     render({
@@ -150,10 +173,21 @@ startButton.addEventListener("click", async () => {
     return;
   }
 
+  if (maxWords < 1) {
+    render({
+      status: "error",
+      error: "Max verdict words must be at least 1.",
+      draftorStatus: "Max verdict words must be at least 1.",
+      reviewerStatus: "Waiting."
+    });
+    return;
+  }
+
   const response = await chrome.runtime.sendMessage({
     type: "START_RUN",
     question,
-    rounds
+    rounds,
+    maxWords
   });
 
   if (!response?.ok) {
